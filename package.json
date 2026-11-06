@@ -1,0 +1,29 @@
+{
+  "name": "canopy-api-health",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API health monitoring with guided troubleshooting and role-based access control.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "server": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "build": "vite build",
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "reset-db": "node scripts/reset-db.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "4.21.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "lenis": "1.1.13",
+    "lucide-react": "0.460.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0",
+    "vite": "5.4.11"
+  }
+}

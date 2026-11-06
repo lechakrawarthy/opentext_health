@@ -1,0 +1,7 @@
+node_modules/
+web/dist/
+data/
+*.log
+
+# Reference recordings
+*.mp4
