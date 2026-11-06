@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
 import { ALL_KEYS, SUPER_ADMIN } from './permissions.js';
+import { SERVERLESS } from './runtime.js';
 
 export const COOKIE = 'canopy_sid';
 const SESSION_TTL = 7 * 24 * 3600 * 1000;
@@ -34,18 +35,45 @@ function parseCookies(header = '') {
   return out;
 }
 
+/*
+  Two session modes:
+  · Long-running server: random token stored in the sessions table (revocable).
+  · Serverless: a signed, stateless token "<userId>.<expiry>.<hmac>", because each
+    instance has its own database and a request may land on any instance.
+*/
+const SECRET = process.env.SESSION_SECRET || 'canopy-demo-session-secret';
+const cookieFlags = () => `HttpOnly; SameSite=Lax; Path=/${SERVERLESS ? '; Secure' : ''}`;
+const sign = (payload) => crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
+
+function readSignedToken(token) {
+  const [uid, exp, sig] = String(token).split('.');
+  if (!uid || !exp || !sig) return null;
+  const expected = sign(`${uid}.${exp}`);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  if (Number(exp) < Date.now()) return null;
+  return Number(uid);
+}
+
 export function createSession(res, userId) {
-  const token = crypto.randomBytes(32).toString('hex');
   const now = Date.now();
-  db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(token, userId, now, now + SESSION_TTL);
-  res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}`);
+  let token;
+  if (SERVERLESS) {
+    const exp = now + SESSION_TTL;
+    token = `${userId}.${exp}.${sign(`${userId}.${exp}`)}`;
+  } else {
+    token = crypto.randomBytes(32).toString('hex');
+    db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(token, userId, now, now + SESSION_TTL);
+  }
+  res.setHeader('Set-Cookie', `${COOKIE}=${token}; ${cookieFlags()}; Max-Age=${SESSION_TTL / 1000}`);
   return token;
 }
 
 export function destroySession(req, res) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
-  if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
-  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  if (token && !SERVERLESS) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  res.setHeader('Set-Cookie', `${COOKIE}=; ${cookieFlags()}; Max-Age=0`);
 }
 
 export function permissionsForRole(role) {
@@ -73,7 +101,16 @@ export function authenticate(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   req.user = null;
   req.perms = new Set();
-  if (token) {
+  if (token && SERVERLESS) {
+    const uid = readSignedToken(token);
+    const row = uid
+      ? db.prepare(`SELECT u.*, r.key AS role_key, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?`).get(uid)
+      : null;
+    if (row && row.status === 'active') {
+      req.user = row;
+      req.perms = new Set(permissionsForRole({ id: row.role_id, key: row.role_key }));
+    }
+  } else if (token) {
     const row = db
       .prepare(
         `SELECT s.expires_at, u.*, r.key AS role_key, r.name AS role_name

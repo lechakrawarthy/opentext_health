@@ -61,8 +61,12 @@ All of them use the password **`canopy123`**. The login page has one-click butto
 ## 2. Project structure
 
 ```
+api/index.js             Vercel serverless entry (wraps server/app.js)
+vercel.json              Vercel build output + rewrites
 server/                  Express + node:sqlite
-  index.js               bootstrap, auth routes, live event stream (SSE), static hosting
+  app.js                 the Express app: auth routes, live event stream (SSE), static hosting
+  index.js               long-running server: listen + start the check engine
+  runtime.js             server vs serverless mode switch
   db.js                  schema, tx() and audit() helpers
   auth.js                scrypt passwords, cookie sessions, requirePerm()
   permissions.js         permission catalogue + default roles
@@ -335,17 +339,23 @@ npm ci && npm run build && npm start      # PORT defaults to 4000
 | `PORT` | `4000` | Server port (demo monitor URLs are seeded with this port) |
 | `CANOPY_DB` | `data/canopy.db` | SQLite file location |
 
-**Vercel** serverless functions don't fit this design as-is:
+### Vercel
 
-* There's no background process, so checks would stop.
-* The filesystem doesn't persist, so data and sessions would reset.
-* Long-lived event streams are cut off.
+The repo deploys to Vercel as is. [vercel.json](vercel.json) serves `web/dist` from the CDN and rewrites `/api/*` to one serverless function ([api/index.js](api/index.js)), which runs the same Express app.
 
-Use a host listed above. To run on Vercel, the app first needs a serverless adaptation:
+When `VERCEL` is set, [server/runtime.js](server/runtime.js) switches the app into **serverless mode**:
 
-* a hosted database (for example Turso or Postgres) instead of the local SQLite file;
-* scheduled checks through Vercel Cron instead of the in-process engine;
-* polling instead of the event stream.
+| Concern | Long-running server | Serverless (Vercel) |
+| --- | --- | --- |
+| Database | `data/canopy.db` | `/tmp/canopy.db`, seeded on each instance's first request |
+| Sessions | random token in the `sessions` table | signed stateless cookie (HMAC), valid on any instance |
+| Health checks | background engine every 2 s | due checks run on demand before monitoring reads |
+| Demo APIs | real HTTP calls to `/mock/*` | simulated in-process |
+| Live updates | event stream (SSE) | screens auto-refresh every 8 s |
+
+Set **`SESSION_SECRET`** in the Vercel project settings to any long random string.
+
+Because each instance has its own temporary database, edits made in the demo (new monitors, role changes) are not shared between instances and reset when an instance is recycled. The seeded demo is always identical. For persistent shared data, point the app at a hosted database such as Turso or Postgres.
 
 ---
 

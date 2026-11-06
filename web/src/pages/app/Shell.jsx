@@ -5,7 +5,7 @@ import Logo from '../../components/Logo.jsx';
 import { BRAND } from '../../lib/brand.js';
 import Modal from '../../components/Modal.jsx';
 import { useAuth } from '../../lib/auth.jsx';
-import { useLiveQuery, useLiveStatus, closeLive } from '../../lib/live.js';
+import { useLiveQuery, useLiveStatus, closeLive, isPolling } from '../../lib/live.js';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import { initials } from '../../lib/format.js';
@@ -73,7 +73,7 @@ export default function Shell() {
         </div>
         <div className={`live side-live ${live ? 'on' : ''}`}>
           <i />
-          {live ? 'Live · streaming checks' : 'Reconnecting…'}
+          {live ? (isPolling() ? 'Live · auto-refresh' : 'Live · streaming checks') : 'Reconnecting…'}
         </div>
         <nav className="side-nav" aria-label="App">
           {items

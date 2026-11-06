@@ -7,8 +7,16 @@ const listeners = new Set();
 let connected = false;
 const statusListeners = new Set();
 
+// 'server' streams events over SSE; 'serverless' (Vercel) can't hold a stream, so screens poll.
+let mode = 'server';
+export function setLiveMode(m) {
+  mode = m === 'serverless' ? 'serverless' : 'server';
+  if (mode === 'serverless') setConnected(true);
+}
+export const isPolling = () => mode === 'serverless';
+
 function ensureSource() {
-  if (source) return;
+  if (source || mode === 'serverless') return;
   source = new EventSource('/api/stream');
   const fire = (e) => listeners.forEach((fn) => fn(e));
   for (const type of ['check', 'incident', 'monitor', 'data']) {
@@ -87,7 +95,7 @@ export function useLiveQuery(path, { filter, throttle = 2500, poll = 20000, enab
       }, wait);
     };
     listeners.add(onEvent);
-    const t = setInterval(load, poll);
+    const t = setInterval(load, mode === 'serverless' ? Math.min(poll, 8000) : poll);
     return () => {
       listeners.delete(onEvent);
       clearInterval(t);

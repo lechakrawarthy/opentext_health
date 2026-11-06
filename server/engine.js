@@ -3,6 +3,8 @@
 import { EventEmitter } from 'node:events';
 import { db, tx } from './db.js';
 import { kindLabel } from './troubleshoot.js';
+import { SERVERLESS } from './runtime.js';
+import { simulateMock } from './mock.js';
 
 export const bus = new EventEmitter();
 bus.setMaxListeners(500);
@@ -27,8 +29,26 @@ function networkKind(code = '', msg = '') {
   return 'network';
 }
 
+function simulatedCheck(m, r) {
+  if (r.hang) return { ok: 0, status_code: null, latency_ms: m.timeout_ms, error_kind: 'timeout', message: `No response within ${m.timeout_ms} ms` };
+  const expected = Number(m.expected_status) || 0;
+  const ok = expected === 0 ? r.status >= 200 && r.status < 400 : r.status === expected;
+  if (ok) return { ok: 1, status_code: r.status, latency_ms: Math.round(r.latency), error_kind: null, message: null };
+  return {
+    ok: 0,
+    status_code: r.status,
+    latency_ms: Math.round(r.latency),
+    error_kind: httpKind(r.status),
+    message: `HTTP ${r.status} (expected ${expected || '2xx/3xx'})`,
+  };
+}
+
 /** Perform one HTTP check. Never throws. */
 export async function performCheck(m) {
+  if (SERVERLESS) {
+    const sim = simulateMock(m.url);
+    if (sim) return simulatedCheck(m, sim);
+  }
   const started = performance.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), m.timeout_ms);
@@ -173,6 +193,21 @@ function tick() {
 function prune() {
   db.prepare('DELETE FROM checks WHERE ts < ?').run(Date.now() - RETENTION_MS);
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+}
+
+/**
+ * Serverless replacement for the background loop: run every due check now (awaited),
+ * at most once every few seconds per instance. Called before monitoring API reads.
+ */
+let lastCatchUp = 0;
+export async function catchUp() {
+  const now = Date.now();
+  if (now - lastCatchUp < 5000) return;
+  lastCatchUp = now;
+  const due = db
+    .prepare('SELECT * FROM monitors WHERE enabled=1 AND (last_checked_at IS NULL OR last_checked_at + interval_s * 1000 <= ?)')
+    .all(now);
+  await Promise.all(due.slice(0, 24).map((m) => runAndRecord(m).catch(() => null)));
 }
 
 export function startEngine() {

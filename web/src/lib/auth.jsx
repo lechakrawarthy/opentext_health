@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
+import { setLiveMode } from './live.js';
 
 const AuthCtx = createContext(null);
 
@@ -9,6 +10,7 @@ export function AuthProvider({ children }) {
   const refresh = useCallback(async () => {
     try {
       const me = await api('/auth/me');
+      setLiveMode(me.runtime);
       setState({ user: me.user, perms: new Set(me.permissions), loading: false });
       return me;
     } catch {

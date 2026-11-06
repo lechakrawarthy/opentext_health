@@ -58,3 +58,21 @@ mockRouter.all('/:a/:b', async (req, res) => {
 });
 
 export { SERVICES };
+
+/**
+ * Serverless only: answer a demo-API URL in-process instead of over HTTP
+ * (a function can't call itself on 127.0.0.1). Returns null for non-mock URLs.
+ */
+export function simulateMock(rawUrl) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (!['127.0.0.1', 'localhost'].includes(u.hostname)) return null;
+  const m = u.pathname.match(/^\/mock\/([^/]+\/[^/]+)/);
+  if (!m) return null;
+  const profile = PROFILES[SERVICES[m[1]]];
+  return profile ? profile(Date.now()) : { status: 404, latency: 5 };
+}
