@@ -39,11 +39,11 @@ export function seedIfEmpty(port) {
     const hash = hashPassword(DEMO_PASSWORD);
     // The first account of each role is the one listed on the login page.
     const people = [
-      ['superadmin@canopy.dev', 'Nagasatish Reddy', 'super_admin'],
-      ['admin@canopy.dev', 'Satish Kumar', 'admin'],
+      ['superadmin@canopy.dev', 'Lokesh Kumar', 'super_admin'],
+      ['admin@canopy.dev', 'Nagasatish Reddy', 'admin'],
       ['sre@canopy.dev', 'Bala Subramanian', 'sre'],
       ['lakshmi@canopy.dev', 'Lakshmi Narayanan', 'sre'],
-      ['dev@canopy.dev', 'Veneela Rao', 'developer'],
+      ['dev@canopy.dev', 'Vineela Rao', 'developer'],
       ['anudra@canopy.dev', 'Anudra Menon', 'developer'],
       ['viewer@canopy.dev', 'Sudha Iyer', 'viewer'],
       ['contractor@canopy.dev', 'Kiran Varma', 'viewer', 'disabled'],
@@ -93,7 +93,7 @@ export function seedIfEmpty(port) {
       if (!enabled) db.prepare(`UPDATE monitors SET last_status='paused' WHERE id=?`).run(id);
     }
 
-    // Give the ongoing outage a human touch: acknowledged by on-call with a note.
+    // Mark the ongoing DNS outage as acknowledged by on-call, with a note.
     const dns = db.prepare(`SELECT i.id FROM incidents i JOIN monitors m ON m.id=i.monitor_id WHERE m.name LIKE 'Legacy gateway%' AND i.status='open'`).get();
     if (dns) {
       const ackAt = now - 2.6 * H;

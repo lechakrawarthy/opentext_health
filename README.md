@@ -1,373 +1,374 @@
 # Canopy
 
-**API observability & incident response console**, built for OpenText.
+API observability and incident response console, built for OpenText.
 
-Canopy runs scheduled health checks against APIs, shows which endpoint is failing, pinpoints **where** on the request path it broke (DNS, TLS, gateway, service), opens and resolves incidents automatically, and gives a super admin role-based control over who can view, run, edit data or manage people.
+Canopy checks APIs on a schedule and shows which endpoint is failing. It points to where the request broke (DNS, TLS, gateway or the service itself), opens and closes incidents automatically, and gives a super admin control over who can view, run checks, edit data or manage people.
 
-This repository is also a **design reference**. Most of this README explains the design system, the motion recipes and the components, so they can be reused in other projects.
+The repo is also meant as a design reference, so a good part of this README covers the design tokens, the scroll animations and the components.
 
-> All data is seeded demo data: people, monitors, 24h of check history and incidents. Nothing connects to production systems.
-
----
+All data is seeded demo data. Nothing here connects to real systems.
 
 ## Contents
 
-1. [Quick start](#1-quick-start)
-2. [Project structure](#2-project-structure)
-3. [Design system](#3-design-system)
-4. [Motion recipes](#4-motion-recipes)
-5. [Landing page anatomy](#5-landing-page-anatomy)
-6. [Component catalogue](#6-component-catalogue)
+1. [Running it](#1-running-it)
+2. [Project layout](#2-project-layout)
+3. [Design tokens](#3-design-tokens)
+4. [Motion](#4-motion)
+5. [Landing page sections](#5-landing-page-sections)
+6. [Components and hooks](#6-components-and-hooks)
 7. [The console](#7-the-console)
-8. [Roles & access](#8-roles--access)
+8. [Roles and access](#8-roles-and-access)
 9. [Deployment](#9-deployment)
-10. [Customising](#10-customising)
+10. [Limitations](#10-limitations)
+11. [Where to change things](#11-where-to-change-things)
 
 ---
 
-## 1. Quick start
+## 1. Running it
 
-Requires **Node.js 22.13+** (Node 24 recommended). The database is SQLite through Node's built-in `node:sqlite`, so there's nothing native to compile.
+You need Node.js 24. SQLite comes from Node's built-in `node:sqlite`, so there's nothing native to install.
 
 ```bash
 npm install
-npm run dev          # API on :4000 + Vite on :5173 → open http://localhost:5173
+npm run dev
 ```
 
-| Script | What it does |
+Then open http://localhost:5173. The API runs on port 4000.
+
+| Script | Does |
 | --- | --- |
-| `npm run dev` | API server (watch mode) and Vite dev server together |
+| `npm run dev` | API server (watch mode) and the Vite dev server |
 | `npm run build` | Builds the frontend into `web/dist` |
-| `npm start` | Production: one server on `:4000` serving the API and the built UI |
-| `npm run reset-db` | Deletes `data/canopy.db`; the next start re-seeds it |
+| `npm start` | Runs one server on port 4000 that serves the API and the built frontend |
+| `npm run reset-db` | Deletes `data/canopy.db`; the next start seeds it again |
 
 ### Demo accounts
 
-All of them use the password **`canopy123`**. The login page has one-click buttons for each.
+Every account uses the password `canopy123`. The login page has a shortcut for each role.
 
-| Person | Email | Role |
+| Name | Email | Role |
 | --- | --- | --- |
-| Nagasatish Reddy | `superadmin@canopy.dev` | Super Admin: everything, including roles |
-| Satish Kumar | `admin@canopy.dev` | Admin: operations & people, not roles |
-| Bala Subramanian | `sre@canopy.dev` | SRE / On-call: monitors, incidents, edit data |
+| Lokesh Kumar | `superadmin@canopy.dev` | Super Admin |
+| Nagasatish Reddy | `admin@canopy.dev` | Admin |
+| Bala Subramanian | `sre@canopy.dev` | SRE / On-call |
 | Lakshmi Narayanan | `lakshmi@canopy.dev` | SRE / On-call |
-| Veneela Rao | `dev@canopy.dev` | Developer: view, run checks, read data |
+| Vineela Rao | `dev@canopy.dev` | Developer |
 | Anudra Menon | `anudra@canopy.dev` | Developer |
-| Sudha Iyer | `viewer@canopy.dev` | Viewer: read-only |
-| Kiran Varma | `contractor@canopy.dev` | Viewer, **disabled** (shows a revoked account) |
+| Sudha Iyer | `viewer@canopy.dev` | Viewer |
+| Kiran Varma | `contractor@canopy.dev` | Viewer, disabled |
 
 ---
 
-## 2. Project structure
+## 2. Project layout
 
 ```
-api/index.js             Vercel serverless entry (wraps server/app.js)
-vercel.json              Vercel build output + rewrites
-server/                  Express + node:sqlite
-  app.js                 the Express app: auth routes, live event stream (SSE), static hosting
-  index.js               long-running server: listen + start the check engine
-  runtime.js             server vs serverless mode switch
-  db.js                  schema, tx() and audit() helpers
-  auth.js                scrypt passwords, cookie sessions, requirePerm()
-  permissions.js         permission catalogue + default roles
-  engine.js              check runner, failure classification, incident state machine
-  troubleshoot.js        failure kind → hop, "where to look", causes, steps
-  mock.js                demo APIs (healthy, flaky, slow, outage, 401, timeouts)
-  seed.js                demo workspace with 24h of history
-  routes/                monitoring.js · access.js · data.js
+api/index.js               Vercel function entry, wraps server/app.js
+vercel.json                Vercel output directory and rewrites
+
+server/
+  app.js                   Express app: auth routes, event stream, static files
+  index.js                 Long-running server: listens and starts the check engine
+  runtime.js               Switches between server and serverless mode
+  db.js                    Schema plus tx() and audit() helpers
+  auth.js                  Password hashing, sessions, requirePerm()
+  permissions.js           Permission list and default roles
+  engine.js                Runs checks, classifies failures, opens and closes incidents
+  troubleshoot.js          Failure type → hop, where to look, causes, next steps
+  mock.js                  Demo APIs (healthy, flaky, slow, outage, 401, timeouts)
+  seed.js                  Demo workspace with 24 hours of history
+  routes/                  monitoring.js, access.js, data.js
 
 web/src/
-  lib/
-    motion.js            ★ motion helpers: smooth scroll, scroll progress, in-view, colour lerp
-    brand.js             product name / brand line
-    api.js auth.jsx live.js toast.jsx format.js
-  components/
-    FlowButton.jsx       ★ primary CTA
-    Logo.jsx Status.jsx LatencyChart.jsx Diagnosis.jsx Modal.jsx NoAccess.jsx
-  pages/
-    Landing.jsx          ★ story, deep chapter, heartbeat, steps, closing
-    landing/             Nav.jsx · LatencyStory.jsx · ConsoleCrops.jsx
-    Login.jsx
-    app/                 Shell, Overview, Monitors, MonitorDetail, Incidents, DataConsole, Access
-  styles/
-    base.css             ★ tokens, motion primitives, FlowButton, Roll, Lenis
-    landing.css          ★ every landing section
-    app.css              console UI
+  lib/motion.js            Smooth scroll, scroll progress, in-view, colour helpers
+  lib/brand.js             Product name and brand line
+  lib/                     api.js, auth.jsx, live.js, toast.jsx, format.js
+  components/              FlowButton, Logo, Status, LatencyChart, Diagnosis, Modal, NoAccess
+  pages/Landing.jsx        Landing page
+  pages/landing/           Nav, LatencyStory, ConsoleCrops
+  pages/Login.jsx
+  pages/app/               Shell, Overview, Monitors, MonitorDetail, Incidents, DataConsole, Access
+  styles/base.css          Tokens, motion utilities, FlowButton, rolling labels
+  styles/landing.css       Landing page
+  styles/app.css           Console
 ```
 
-★ = the files to study for the design and motion.
+If you're here for the design, the files to read are `styles/base.css`, `styles/landing.css`, `pages/Landing.jsx` and `lib/motion.js`.
 
 ---
 
-## 3. Design system
+## 3. Design tokens
 
-Every token lives in `:root` in [web/src/styles/base.css](web/src/styles/base.css). Change a token there and the whole product follows.
+All tokens live in `:root` in [web/src/styles/base.css](web/src/styles/base.css).
 
 ### Colour
 
-| Token | Value | Role |
+| Token | Value | Used for |
 | --- | --- | --- |
-| `--ink` | `#0f3b2c` | Deep forest. Headlines, primary pill, body text |
-| `--deep` / `--deep-2` / `--deep-3` | `#0f3b2c` → `#0a2c21` | **Dark surfaces are the ink itself, a few steps deeper**, so dark chapters and the sidebar read as the same family as the headline colour |
-| `--lime` | `#b9e769` | Accent: CTA orb, active nav, toggles, step numbers |
-| `--flood` | `#bfe57a` | The full-screen lime of the scroll story |
-| `--sprout` | `#74c43a` | Leading edge of text reveals, chart lines |
-| `--olive` | `#5f8f35` | Accent word in headlines ("Know which **API**…") |
-| `--cream` | `#f6f3c9` | Yellow bloom and the soft rim of the flood |
-| `--bg` / `--surface` / `--line` | | Paper, white cards, hairlines |
+| `--ink` | `#0f3b2c` | Headlines, body text, the primary button |
+| `--deep`, `--deep-2`, `--deep-3` | `#0f3b2c` to `#0a2c21` | Dark sections and the console sidebar. These are deeper steps of `--ink`, so dark areas stay in the same colour family as the text |
+| `--lime` | `#b9e769` | Accent: button orb, active nav item, toggles |
+| `--flood` | `#bfe57a` | The full-screen lime in the landing scroll |
+| `--sprout` | `#74c43a` | Chart lines and the leading edge of text reveals |
+| `--olive` | `#5f8f35` | The highlighted word in headlines |
+| `--cream` | `#f6f3c9` | The yellow glow at the edge of the lime |
+| `--bg`, `--surface`, `--line` | | Page background, cards, borders |
 
-**Status colours** have fixed meanings. Don't use them for decoration:
+The status colours each mean one thing and aren't used for decoration:
 
 | Token | Meaning |
 | --- | --- |
-| `--up` | operational |
-| `--degraded` | over its latency budget |
-| `--partial` | some checks in a bucket failed |
-| `--down` | failing |
-| `--paused` | not checked |
-| `--pending` | not yet checked |
+| `--up` | Operational |
+| `--degraded` | Over its latency budget |
+| `--partial` | Some checks failed in that time bucket |
+| `--down` | Failing |
+| `--paused` | Not being checked |
+| `--pending` | Not checked yet |
 
 ### Type
 
-| Token | Font | Use |
+| Token | Font | Used for |
 | --- | --- | --- |
-| `--font-display` | Inter Tight | Headlines at weight 500 with very tight tracking (`-0.04em` to `-0.048em`). Large numbers |
+| `--font-display` | Inter Tight | Headlines and large numbers, weight 500, tracking around `-0.045em` |
 | `--font` | Inter | UI and body text |
-| `--mono` | JetBrains Mono | URLs, timings, codes, table data |
+| `--mono` | JetBrains Mono | URLs, timings, table data |
 
 ### Easing
 
-| Token | Curve | Use |
+| Token | Curve | Used for |
 | --- | --- | --- |
-| `--ease-out` | `cubic-bezier(.2,.7,.2,1)` | Almost every transition: fast start, long settle |
-| `--ease-wipe` | `cubic-bezier(.55,0,.15,1)` | Text wipes and line draws: slow start, confident finish |
+| `--ease-out` | `cubic-bezier(.2,.7,.2,1)` | Most transitions |
+| `--ease-wipe` | `cubic-bezier(.55,0,.15,1)` | Text wipes and line drawing |
 
 ### Surfaces
 
-* **Light:** white cards, a 1px `--line` border, `--shadow-sm`, radius 20 / 14 / 10.
-* **Lime wash:** layered `radial-gradient`s, never flat fills. Used in the hero, KPI tile, console crops and closing.
-* **Grain:** a `.grain` overlay (SVG noise, `soft-light`, 8%) on large gradients to prevent banding.
+* Cards are white with a 1px `--line` border, a small shadow, and 20 / 14 / 10 px radii.
+* Lime areas are layered radial gradients rather than flat fills.
+* Large gradients get a `.grain` overlay (SVG noise at 8%) so they don't band.
 
 ---
 
-## 4. Motion recipes
+## 4. Motion
 
-There's no animation framework. The only motion library is **Lenis** (smooth scroll); everything else is CSS plus small hooks in [web/src/lib/motion.js](web/src/lib/motion.js).
+The only animation dependency is Lenis, for smooth scrolling. Everything else is CSS and a few hooks in [web/src/lib/motion.js](web/src/lib/motion.js).
 
-Rules every effect follows:
+Three rules apply everywhere:
 
-1. Animate only `transform`, `opacity`, `clip`/`mask` and SVG dash offsets.
-2. Scroll effects write **CSS variables or element styles directly**, once per animation frame. They never set React state per frame.
-3. Everything respects `prefers-reduced-motion`: the story un-pins, wipes complete instantly and smooth scroll is off.
+1. Only `transform`, `opacity`, masks and SVG dash offsets are animated.
+2. Scroll effects write CSS variables or styles directly once per frame. They never set React state per frame.
+3. With `prefers-reduced-motion` on, the story section stops pinning, wipes finish instantly, and smooth scroll is off.
 
-### 4.1 Heavy scroll: `useSmoothScroll()`
+### Smooth scroll
 
-Lenis with `duration 1.35` and an exponential ease. The page glides and settles instead of stepping; this is the "heavy" feel of large brand sites. Native scroll position is kept, so `position: sticky` and scroll listeners keep working. It's used on the landing page only; the console scrolls natively.
+`useSmoothScroll()` runs Lenis with a 1.35 s exponential ease, which is what makes the page feel weighted when you scroll. Native scroll position is kept, so `position: sticky` and scroll listeners still work. It's on the landing page only.
 
-To jump to a section through Lenis, use `scrollToId('console')`.
+To scroll to a section, use `scrollToId('console')`.
 
-### 4.2 The flood: downward Gaussian sweep
+### The lime flood
 
-This is the core effect ([Landing.jsx](web/src/pages/Landing.jsx) `useStory`, [landing.css](web/src/styles/landing.css) `.flood-*`).
+This lives in `useStory` in [Landing.jsx](web/src/pages/Landing.jsx) and the `.flood-*` rules in [landing.css](web/src/styles/landing.css).
 
-A 380vh section holds a `position: sticky` 100vh stage. Scroll inside the section is mapped to `--a` (0 → 1) on the section element. Two layers sit behind the hero:
+The story section is 380vh tall with a sticky 100vh stage inside it. Scroll position inside the section becomes `--a`, going from 0 to 1. Two layers behind the hero use it:
 
-| Layer | What it is | How `--a` moves it |
-| --- | --- | --- |
-| `.flood-front` | A huge **ellipse** (130vw × 220vh). Its radial gradient is a solid lime body, then a crisp bright rim (lime → chartreuse → cream → white over ~13% of the radius), then transparent | `translateY` moves its bottom edge **down** from 55vh to 200vh. Because it's an ellipse, the centre leads and the sides lag, producing the visible **U-shaped borderline** |
-| `.flood-trail` | A 200vh lime sheet with its own soft lip | Follows the front down, keeps the top corners filled and finishes as solid lime |
+* **`.flood-front`** is a large ellipse, 130vw by 220vh. Its gradient is solid lime, then a thin bright rim (lime, chartreuse, cream), then transparent. As `--a` goes up, its bottom edge moves down the screen from 55vh to 200vh. Because it's an ellipse, the middle comes down first and the sides follow, which gives the U-shaped edge.
+* **`.flood-trail`** is a taller lime sheet that follows the ellipse down and fills the top corners. At the end, the screen is solid lime.
 
-At the end, `opacity: calc((0.96 - var(--a)) * 6)` dissolves the front, so the pinned statement sits on clean lime.
-
-Meanwhile the hero content translates up at scroll speed, so it feels like normal scrolling while the colour stays pinned and floods down.
+Near the end, the ellipse fades out (`opacity: calc((0.96 - var(--a)) * 6)`) so the statement sits on plain lime. The hero content moves up at scroll speed, so it reads as normal scrolling while the colour floods in behind it.
 
 To tune it:
 
 | To change | Edit |
 | --- | --- |
-| A sharper border | Tighten the 76% → 93% stops on `.flood-front` |
-| A deeper U | Narrow its `width` |
-| A slower sweep | Raise `vh * 1.2` in `useStory` |
+| A sharper edge | Bring the 76% to 93% stops on `.flood-front` closer together |
+| A deeper U | Reduce the width of `.flood-front` |
+| A slower sweep | Increase the `vh * 1.2` divisor in `useStory` |
 
-### 4.3 Word-by-word statement
+### Word-by-word statement
 
-Each word is a `<span>`. A progress value `b` gives every word a local `t`. Over `t` the colour is interpolated **mist → sprout → ink** (`lerpColor`), with opacity, an 8px rise and a 4px blur that clears. The reading edge always glows bright green and then settles to ink.
+Each word is its own span with its own progress value. As that value rises, the word goes from pale to bright green to ink. At the same time it moves up 8px and a 4px blur clears.
 
-### 4.4 Wipe-in headings: `.wipe` / `.wipe-view`
+### Heading wipes
 
-A soft-edged left-to-right reveal using a `mask-image` gradient 260% wide, with `mask-position` animated from 100% to 0.
+`.wipe` and `.wipe-view` reveal text left to right with a soft edge. They use a mask gradient that's 260% wide and animate `mask-position`.
 
-* `.wipe` runs on mount. Stagger it with `style={{'--d':'300ms'}}`.
-* `.wipe-view` runs when `.in` is added. The `WipeHeading` component does this with `useInView`.
+* `.wipe` runs on page load. Add `--d` for a delay, for example `style={{'--d':'300ms'}}`.
+* `.wipe-view` runs when the element scrolls into view. Use the `WipeHeading` component.
 
-### 4.5 Rise & reveal: `.rise` / `.reveal`
+### Fade and rise
 
-These fade and lift elements in. `.rise` runs on mount and `.reveal` runs on view (the `Reveal` component). Stagger with `--d`. Console pages use the same idea automatically: direct children of `.page` rise in sequence and the `h1` wipes in.
+`.rise` (on load) and `.reveal` (on scroll into view) fade elements up. Use `--d` to stagger them. On console pages, the direct children of `.page` do this automatically and the page title wipes in.
 
-### 4.6 Pinned chapter: `Deep` + `LatencyStory`
+### Pinned chart section
 
-A 280vh section with a sticky stage. Scroll progress `p` drives:
+The `Deep` component and [LatencyStory.jsx](web/src/pages/landing/LatencyStory.jsx) build this section. It's 280vh tall with a sticky stage, and scroll progress drives two things:
 
-* **The chart:** an SVG `clipPath` rect widens with `p`, so four latency lines draw across the last 60 minutes. Head dots and legend values follow the drawing edge, and the clock counts down from −60 min to now. At fixed points an outage band appears, then "Incident opened", then "Recovered".
-* **The copy:** audience rows light up in step (`.on` / `.past`). A lime hairline draws across the active row.
+* **The chart.** A clip rect widens so four latency lines draw across the last 60 minutes. Dots and values follow the drawing edge, and the clock counts from −60 min to now. At set points an outage band appears, then an "Incident opened" card, then "Recovered".
+* **The copy.** On the left, the four audience rows highlight one after another.
 
-### 4.7 Scroll-drawn line: heartbeat
+### Heartbeat line
 
-An SVG path with `pathLength="1"` gets `strokeDashoffset = 1 - t` from scroll. `getPointAtLength` positions a glowing HTML dot at the drawing head, and labels surface as the head passes them. A `userSpaceOnUse` gradient colours only the failure dip red.
+This is an SVG path with `pathLength="1"`. Scroll sets `strokeDashoffset`, and `getPointAtLength` places a dot at the drawing point. Labels appear as the dot passes them, and a gradient turns only the failure dip red.
 
-The steps section uses the same idea: a progress bar fills with scroll and each step "turns on" as it's reached.
+The "How it works" section uses the same approach with a progress bar.
 
-### 4.8 Micro-interactions
+### Small interactions
 
-| Effect | Where it's defined |
+| Interaction | Where |
 | --- | --- |
-| **FlowButton:** the lime orb floods the pill, the label rolls up, the arrow turns | `components/FlowButton.jsx` + `.fb` in base.css |
-| **Rolling label:** `<Roll>` / `.roll` uses the same roll gesture for links | `landing/Nav.jsx` + base.css |
-| **Nav:** a lime pill glides under the hovered link, a dot marks the active section, the bar tightens and frosts on scroll, the CTA slides in after the hero | `landing/Nav.jsx` |
-| Hero signal icons: each has its own hover gesture (beat, needle, ring, draw, pop) | `.hc-*` |
-| Load-in: nav drops in, headline wipes, flood settles from the top, grid rule draws, cells rise | `landing.css` |
-| Console crops: the newest uptime bar blinks, a permission toggle flips | `landing/ConsoleCrops.jsx` |
-| Charts draw on first paint; uptime bars grow from the baseline; failure-path hops arrive in sequence; the failing hop pulses | `app.css` |
+| Button hover: the lime circle fills the button, the label rolls up, the arrow turns | `components/FlowButton.jsx`, `.fb` in base.css |
+| Rolling link labels | `Roll` in `landing/Nav.jsx`, `.roll` in base.css |
+| Nav: hover highlight slides between links, a dot marks the current section, the bar narrows on scroll, the console button slides in after the hero | `landing/Nav.jsx` |
+| Hero icons each have a small hover animation | `.hc-*` in landing.css |
+| Console previews: the newest uptime bar blinks, a permission toggle switches | `landing/ConsoleCrops.jsx` |
+| Console: charts draw in, uptime bars grow, failure-path steps appear in order | app.css |
 
 ---
 
-## 5. Landing page anatomy
+## 5. Landing page sections
 
-| # | Section | Component | Motion |
+| # | Section | Code | Motion |
 | --- | --- | --- | --- |
-| 1 | Nav | `landing/Nav.jsx` | Hover pill, active dot, compaction, CTA slide-in |
-| 2 | Hero → flood → statement | `Landing.jsx` story | §4.2, §4.3 |
-| 3 | Deep chapter | `Deep` + `landing/LatencyStory.jsx` | §4.6 (pinned) |
-| 4 | Heartbeat | `Heartbeat` | §4.7 |
-| 5 | Inside the console | `landing/ConsoleCrops.jsx` | Wipe headline; crops of the real UI, fading into the wash |
-| 6 | How it works | `Steps` | Scroll-filled track, steps turn on |
-| 7 | Closing | `Closing` | A second lime bowl rises with scroll |
+| 1 | Nav | `landing/Nav.jsx` | Hover highlight, current-section dot, narrows on scroll |
+| 2 | Hero, lime flood, statement | `Landing.jsx` | Flood and word reveal |
+| 3 | Latency chart | `Deep`, `landing/LatencyStory.jsx` | Pinned, scroll-drawn |
+| 4 | Heartbeat | `Heartbeat` | Scroll-drawn line |
+| 5 | Inside the console | `landing/ConsoleCrops.jsx` | Heading wipe, live details in the previews |
+| 6 | How it works | `Steps` | Progress bar, steps light up |
+| 7 | Closing | `Closing` | Lime glow rises with scroll |
 
 ---
 
-## 6. Component catalogue
+## 6. Components and hooks
 
-### Design components
-
-| Component | Props | Notes |
-| --- | --- | --- |
-| `FlowButton` | `to?`, `size: 'lg'\|'md'\|'sm'`, `block?`, plus any button props | A Link when given `to`, otherwise a button. Pass a string child (it's used for the rolling copy) |
-| `Roll` (in `landing/Nav.jsx`) | `children` (string) | Rolling hover label for links |
-| `Logo` | `dark?`, `size?` | The mark's ring rotates slowly |
-| `WipeHeading`, `Reveal` (in `Landing.jsx`) | `as`, `className`, `delay` | Reveal on view |
-
-### Data components
+### Components
 
 | Component | Props | Notes |
 | --- | --- | --- |
-| `StatusDot`, `StatusBadge` | `status`, `pulse?` | `up` `degraded` `down` `paused` `pending` |
-| `SeverityTag`, `IncidentState`, `EnvTag` | value | Incident and environment chips |
-| `UptimeStrip` | `buckets`, `compact?` | 24h health bars with tooltips |
-| `LatencyChart` | `series`, `threshold?`, `height?` | Responsive SVG area chart: draws in, hover tooltip, dashed budget line |
-| `Diagnosis`, `FailurePath` | `diagnosis`, `message?`, `compact?` | Where it broke, likely causes, numbered steps |
-| `Modal`, `Confirm` | `title`, `onClose`, `footer`… | Esc to close, backdrop click, focus restore |
+| `FlowButton` | `to?`, `size` (`lg`, `md`, `sm`), `block?`, plus button props | Renders a Link when `to` is set, otherwise a button. The child must be a string |
+| `Roll` | `children` (string) | Rolling hover label |
+| `Logo` | `dark?`, `size?` | |
+| `WipeHeading`, `Reveal` | `as`, `className`, `delay` | Animate in on scroll |
+| `StatusDot`, `StatusBadge` | `status`, `pulse?` | `up`, `degraded`, `down`, `paused`, `pending` |
+| `SeverityTag`, `IncidentState`, `EnvTag` | value | Small labels |
+| `UptimeStrip` | `buckets`, `compact?` | 24-hour health bars |
+| `LatencyChart` | `series`, `threshold?`, `height?` | SVG area chart with a hover tooltip and a dashed budget line |
+| `Diagnosis`, `FailurePath` | `diagnosis`, `message?`, `compact?` | Shows where a request failed and what to try |
+| `Modal`, `Confirm` | `title`, `onClose`, `footer` | Closes on Esc or a backdrop click |
 
-### Hooks (in `lib/`)
+### Hooks
 
-| Hook | Purpose |
+| Hook | Does |
 | --- | --- |
-| `useSmoothScroll()` | Lenis inertial scroll |
-| `useScrollProgress(ref, fn)` | Calls `fn(0…1)` each frame as an element crosses the viewport |
-| `useInView()` | Becomes true once, on first view |
-| `usePrefersReducedMotion()` | Media-query flag |
-| `useLiveQuery(path, {filter})` | Fetch plus live refresh from the event stream |
-| `useAuth()` | `{ user, can(perm), login, logout }` |
-| `useToast()` | Toast notifications |
+| `useSmoothScroll()` | Turns on Lenis |
+| `useScrollProgress(ref, fn)` | Calls `fn` with 0 to 1 as an element moves through the viewport |
+| `useInView()` | Returns true once the element has been seen |
+| `usePrefersReducedMotion()` | Reads the reduced-motion setting |
+| `useLiveQuery(path, opts)` | Fetches data and refreshes it when new events arrive |
+| `useAuth()` | `user`, `can(permission)`, `login`, `logout` |
+| `useToast()` | Shows a toast |
 
 ---
 
 ## 7. The console
 
-| Page | What's on it |
+| Page | Contents |
 | --- | --- |
-| **Overview** | KPI tiles, "Needs attention" (with where to look), 24h latency, recent incidents, per-service uptime strips |
-| **Monitors** | Filter, search, run a check now, create / edit / pause / delete |
-| **Monitor detail** | Uptime and percentiles, the **Diagnosis** panel with the failure path, the latency chart against its budget, failures by type, recent checks |
-| **Incidents** | Opened after 2 consecutive failures, auto-resolved after 2 healthy checks. Acknowledge, resolve, reopen, notes, timeline |
-| **Data console** | Browse allow-listed tables, double-click to edit permitted cells, delete rows. Every change is audited |
-| **Access control** | People, the roles & permissions matrix, audit log |
+| Overview | KPIs, endpoints that need attention (with where to look), 24-hour latency, recent incidents, uptime per service |
+| Monitors | Filter, search, run a check now, create, edit, pause, delete |
+| Monitor detail | Uptime and percentiles, the diagnosis panel, latency against the budget, failures by type, recent checks |
+| Incidents | Open after 2 failed checks in a row and close after 2 healthy ones. Acknowledge, resolve, reopen, add notes |
+| Data console | Browse permitted tables, double-click to edit allowed cells, delete rows. All changes are audited |
+| Access control | People, roles and permissions, audit log |
 
-**Failure classification:**
+How failures map to the request path:
 
-| Failure | Hop flagged |
+| Failure | Shown at |
 | --- | --- |
 | DNS | DNS |
-| Refused, reset, TLS | Network · TLS |
-| 401 / 403 / 404 / 429 | Gateway |
-| 5xx, timeout, wrong status, body mismatch | Service |
+| Connection refused, reset, TLS | Network / TLS |
+| 401, 403, 404, 429 | Gateway |
+| 5xx, timeout, wrong status, unexpected body | Service |
 
-Hints live in [server/troubleshoot.js](server/troubleshoot.js).
+The hints for each failure are in [server/troubleshoot.js](server/troubleshoot.js).
 
 ---
 
-## 8. Roles & access
+## 8. Roles and access
 
-Permissions are grouped into **14 permissions** across four areas:
+There are 14 permissions in four groups:
 
-| Area | Permissions |
+| Group | Permissions |
 | --- | --- |
 | Monitoring | view, run, create, edit, delete |
 | Incidents | view, manage |
 | Database | read, write, delete |
-| Administration | users view, users manage, roles manage, audit view |
+| Administration | view people, manage people, manage roles, view audit log |
 
-Each role is a bundle of these, and each person holds one role. Everything is enforced on the server; a request without permission gets a 403. The UI only hides what you can't use.
+A role is a set of permissions, and each person has one role. The server checks every permission and answers 403 when one is missing; the UI only hides what you can't use.
 
 * Super Admin always has every permission and can't be edited or deleted.
-* Only a super admin can grant Super Admin. At least one active super admin must remain.
-* Nobody can change their own role or disable themselves.
-* Permission changes apply on the person's next request.
-* Every change is written to the audit log.
+* Only a super admin can make someone else a super admin, and at least one active super admin must remain.
+* Nobody can change their own role or disable their own account.
+* Permission changes take effect on the person's next request.
+* Every change is recorded in the audit log.
 
 ---
 
 ## 9. Deployment
 
-Canopy is a **long-running Node server**. It has a background check engine, a SQLite file and a live event stream. Host it anywhere that runs `npm start` continuously, such as Render, Railway, Fly.io, a VM or a container:
+### Any Node host (Render, Railway, Fly.io, a VM)
 
 ```bash
-npm ci && npm run build && npm start      # PORT defaults to 4000
+npm ci && npm run build && npm start
 ```
 
-| Env var | Default | Purpose |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `4000` | Server port (demo monitor URLs are seeded with this port) |
-| `CANOPY_DB` | `data/canopy.db` | SQLite file location |
+| `PORT` | `4000` | Server port |
+| `CANOPY_DB` | `data/canopy.db` | SQLite file path |
 
 ### Vercel
 
-The repo deploys to Vercel as is. [vercel.json](vercel.json) serves `web/dist` from the CDN and rewrites `/api/*` to one serverless function ([api/index.js](api/index.js)), which runs the same Express app.
+The repo deploys to Vercel without extra setup. [vercel.json](vercel.json) serves `web/dist` and sends `/api/*` to one function, [api/index.js](api/index.js), which runs the same Express app.
 
-When `VERCEL` is set, [server/runtime.js](server/runtime.js) switches the app into **serverless mode**:
+When the `VERCEL` environment variable is present, [server/runtime.js](server/runtime.js) switches to serverless mode:
 
-| Concern | Long-running server | Serverless (Vercel) |
+| | Node host | Vercel |
 | --- | --- | --- |
 | Database | `data/canopy.db` | `/tmp/canopy.db`, seeded on each instance's first request |
-| Sessions | random token in the `sessions` table | signed stateless cookie (HMAC), valid on any instance |
-| Health checks | background engine every 2 s | due checks run on demand before monitoring reads |
-| Demo APIs | real HTTP calls to `/mock/*` | simulated in-process |
-| Live updates | event stream (SSE) | screens auto-refresh every 8 s |
+| Sessions | Token stored in the database | Signed cookie |
+| Health checks | Background loop every 2 s | Run when someone loads a console page |
+| Demo APIs | Real HTTP calls to `/mock/*` | Simulated inside the function |
+| Live updates | Server-sent events | Page refreshes every 8 s |
 
-Set **`SESSION_SECRET`** in the Vercel project settings to any long random string.
-
-Because each instance has its own temporary database, edits made in the demo (new monitors, role changes) are not shared between instances and reset when an instance is recycled. The seeded demo is always identical. For persistent shared data, point the app at a hosted database such as Turso or Postgres.
+Set `SESSION_SECRET` to a long random string in the Vercel project settings.
 
 ---
 
-## 10. Customising
+## 10. Limitations
 
-| Change | Where |
+* **Demo data only.** People, monitors, history and incidents are generated by [server/seed.js](server/seed.js). The demo APIs in `server/mock.js` produce failures on purpose.
+* **One check location.** All checks run from a single place. If that host's network has a problem, every monitor will look like it's failing.
+* **No custom headers or auth on checks.** Monitors send plain requests. An API that needs a token or API key can't be checked yet.
+* **No alerts.** Incidents appear in the console, but nothing is sent to email, Teams or Slack.
+* **SQLite on one instance.** On a Node host, data lives in a single file on that machine, which is fine for one instance but not for several. Moving to a shared database like Postgres would need changes in `db.js` and the route queries.
+* **Vercel resets data.** Each Vercel instance keeps its own temporary database. Edits such as new monitors or role changes aren't shared between instances and are lost when an instance is recycled. On Vercel, checks also only run while someone is using the console, so history has gaps between visits.
+* **Basic session security.** Sessions use a cookie with no separate CSRF token. Sign-in attempts are rate-limited in memory, so the limit resets on restart and isn't shared across instances.
+* **No single sign-on.** There's no SSO, SAML or LDAP; accounts are local email and password.
+* **No automated tests.** The app has been checked by hand and with scripted browser runs, but there is no test suite in the repo.
+* **Desktop first.** The console works on phones, but it's laid out for desktop. Very wide tables scroll sideways on small screens.
+* **Retention.** Check results older than 7 days are deleted.
+
+---
+
+## 11. Where to change things
+
+| To change | Edit |
 | --- | --- |
-| Product name / brand line | [web/src/lib/brand.js](web/src/lib/brand.js) |
+| Product name or brand line | [web/src/lib/brand.js](web/src/lib/brand.js) |
 | Colours, fonts, easing | `:root` in [base.css](web/src/styles/base.css) |
-| Flood colours and shape | `.flood-front`, `.flood-trail` in [landing.css](web/src/styles/landing.css) |
-| Statement copy | `STATEMENT` in [Landing.jsx](web/src/pages/Landing.jsx) |
-| Demo people | `people` in [server/seed.js](server/seed.js), then `npm run reset-db` |
-| Roles & permissions | [server/permissions.js](server/permissions.js) |
-| Troubleshooting steps | [server/troubleshoot.js](server/troubleshoot.js) |
-| Incident sensitivity | `FAIL_THRESHOLD` / `RECOVER_THRESHOLD` in [server/engine.js](server/engine.js) |
+| Flood colours and shape | `.flood-front` and `.flood-trail` in [landing.css](web/src/styles/landing.css) |
+| Statement text | `STATEMENT` in [Landing.jsx](web/src/pages/Landing.jsx) |
+| Demo people | `people` in [server/seed.js](server/seed.js), then run `npm run reset-db` |
+| Roles and permissions | [server/permissions.js](server/permissions.js) |
+| Troubleshooting hints | [server/troubleshoot.js](server/troubleshoot.js) |
+| Incident sensitivity | `FAIL_THRESHOLD` and `RECOVER_THRESHOLD` in [server/engine.js](server/engine.js) |

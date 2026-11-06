@@ -7,10 +7,10 @@ import { BRAND } from '../lib/brand.js';
 import { useAuth } from '../lib/auth.jsx';
 
 const DEMO = [
-  ['superadmin@canopy.dev', 'Nagasatish', 'Super Admin · everything, incl. roles'],
-  ['admin@canopy.dev', 'Satish', 'Admin · operations & people'],
+  ['superadmin@canopy.dev', 'Lokesh', 'Super Admin · everything, incl. roles'],
+  ['admin@canopy.dev', 'Nagasatish', 'Admin · operations & people'],
   ['sre@canopy.dev', 'Bala', 'SRE / On-call · monitors, incidents, data'],
-  ['dev@canopy.dev', 'Veneela', 'Developer · investigate & run checks'],
+  ['dev@canopy.dev', 'Vineela', 'Developer · investigate & run checks'],
   ['viewer@canopy.dev', 'Sudha', 'Viewer · read-only'],
 ];
 
